@@ -1,0 +1,123 @@
+{
+  "name": "EasyStreams",
+  "version": "1.1.97",
+  "scrapers": [
+    {
+      "id": "easystreams-guardoserie",
+      "name": "Guardoserie",
+      "version": "1.1.26",
+      "description": "Movies and Series from Guardoserie",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/guardoserie.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-guardahd",
+      "name": "GuardaHD",
+      "version": "1.1.20",
+      "description": "Movies from GuardaHD",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/guardahd.js",
+      "supportedTypes": ["movie", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-animeunity",
+      "name": "AnimeUnity",
+      "version": "1.1.20",
+      "description": "Anime from AnimeUnity",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["kitsu:", "tmdb:", "tt"],
+      "filename": "providers/animeunity.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-animeworld",
+      "name": "AnimeWorld",
+      "version": "1.1.17",
+      "description": "Anime from AnimeWorld",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["kitsu:", "tmdb:", "tt"],
+      "filename": "providers/animeworld.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-animesaturn",
+      "name": "AnimeSaturn",
+      "version": "1.0.18",
+      "description": "Anime from AnimeSaturn",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["kitsu:", "tmdb:", "tt"],
+      "filename": "providers/animesaturn.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-streamingcommunity",
+      "name": "StreamingCommunity",
+      "version": "1.1.42",
+      "description": "Movies and Series from StreamingCommunity",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/streamingcommunity.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-cinemacity",
+      "name": "CinemaCity",
+      "version": "1.0.38",
+      "description": "Movies and Series from CinemaCity",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/cinemacity.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-altadefinizionestreaming",
+      "name": "AltadefinizioneStreaming",
+      "version": "1.0.5",
+      "description": "Movies and Series from AltadefinizioneStreaming",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["mp4", "m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/altadefinizionestreaming.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    },
+    {
+      "id": "easystreams-netmirror",
+      "name": "NetMirror",
+      "version": "1.0.0",
+      "description": "Movies and Series from NetMirror",
+      "resources": ["stream"],
+      "contentLanguage": ["it"],
+      "formats": ["m3u8"],
+      "idPrefixes": ["tmdb:", "tt"],
+      "filename": "providers/netmirror.js",
+      "supportedTypes": ["movie", "tv", "series"],
+      "enabled": true
+    }
+  ]
+}
