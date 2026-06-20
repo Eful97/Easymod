@@ -7,6 +7,7 @@ const {
   shouldRetrySeasonMappingWithImdb,
   toAbsoluteEpisodeFromSeasonCounts
 } = require("../src/anime_episode_candidates.js");
+const animeWorld = require("../src/animeworld/index.js");
 const manifest = require("../manifest.json");
 
 function supportsNuvioTvType(supportedTypes, requestedType) {
@@ -41,6 +42,27 @@ async function run() {
     requested: { provider: "tmdb", externalId: "1429", season: 2, episode: 1 },
     mappings: { ids: { imdb: "tt2560140", tmdb: "1429" } }
   };
+  const jujutsuSearchHtml = `
+    <div class="film-list">
+      <a href="/play/jujutsu-kaisen.8nMP2" data-jtitle="Jujutsu Kaisen">Jujutsu Kaisen</a>
+      <a href="/play/jujutsu-kaisen-ita.oV4fH" data-jtitle="Jujutsu Kaisen ITA">Jujutsu Kaisen (ITA)</a>
+      <a href="/play/jujutsu-kaisen-2.M-Oiw" data-jtitle="Jujutsu Kaisen 2">Jujutsu Kaisen 2</a>
+      <a href="/play/jujutsu-kaisen-0-movie.r6W2i" data-jtitle="Jujutsu Kaisen 0 Movie">Jujutsu Kaisen 0 Movie</a>
+    </div>
+  `;
+  const jujutsuResults = animeWorld._private.parseAnimeWorldSearchResults(jujutsuSearchHtml);
+  const demonSlayerSearchHtml = `
+    <div class="film-list">
+      <a href="/play/demon-slayer-kimetsu-no-yaiba.LrOb0"></a>
+      <a href="/play/demon-slayer-kimetsu-no-yaiba.LrOb0" data-jtitle="Kimetsu no Yaiba">Demon Slayer: Kimetsu no Yaiba</a>
+      <a href="/play/demon-slayer-kimetsu-no-yaiba-2.pbncD" data-jtitle="Kimetsu no Yaiba: Mugen Ressha-hen">Demon Slayer: Kimetsu no Yaiba Mugen Train Arc TV</a>
+      <a href="/play/demon-slayer-kimetsu-no-yaiba-entertainment-district-arc.-HwgD" data-jtitle="Kimetsu no Yaiba: Yuukaku-hen">Demon Slayer: Kimetsu no Yaiba Entertainment District Arc</a>
+      <a href="/play/demon-slayer-kimetsu-no-yaiba-ita.3z-5e" data-jtitle="Kimetsu no Yaiba">Demon Slayer: Kimetsu no Yaiba</a>
+    </div>
+  `;
+  const demonSlayerResults = animeWorld._private.parseAnimeWorldSearchResults(
+    demonSlayerSearchHtml
+  );
 
   assert.equal(
     toAbsoluteEpisodeFromSeasonCounts(attackOnTitanSeasonCounts, 2, 1),
@@ -107,6 +129,34 @@ async function run() {
       tmdbMappingPayload
     ),
     false
+  );
+
+  assert.deepEqual(
+    animeWorld._private.selectAnimeWorldSearchPaths(jujutsuResults, ["Jujutsu Kaisen"], 1),
+    ["/play/jujutsu-kaisen.8nMP2", "/play/jujutsu-kaisen-ita.oV4fH"]
+  );
+  assert.deepEqual(
+    animeWorld._private.selectAnimeWorldSearchPaths(jujutsuResults, ["Jujutsu Kaisen"], 2),
+    ["/play/jujutsu-kaisen-2.M-Oiw"]
+  );
+  assert.deepEqual(
+    animeWorld._private.selectAnimeWorldSearchPaths(
+      demonSlayerResults,
+      ["Demon Slayer: Kimetsu no Yaiba"],
+      1
+    ),
+    [
+      "/play/demon-slayer-kimetsu-no-yaiba.LrOb0",
+      "/play/demon-slayer-kimetsu-no-yaiba-ita.3z-5e"
+    ]
+  );
+  assert.deepEqual(
+    animeWorld._private.selectAnimeWorldSearchPaths(
+      demonSlayerResults,
+      ["Demon Slayer: Kimetsu no Yaiba"],
+      2
+    ),
+    ["/play/demon-slayer-kimetsu-no-yaiba-2.pbncD"]
   );
 
   const animeScrapers = manifest.scrapers.filter((scraper) =>

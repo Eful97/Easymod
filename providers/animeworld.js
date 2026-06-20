@@ -323,7 +323,7 @@ var require_quality_helper = __commonJS({
 var require_anime_episode_candidates = __commonJS({
   "src/anime_episode_candidates.js"(exports2, module2) {
     "use strict";
-    var TMDB_API_KEY = "68e094699525b18a70bab2f86b1fa706";
+    var TMDB_API_KEY2 = "68e094699525b18a70bab2f86b1fa706";
     var TMDB_TIMEOUT_MS = 5e3;
     var SEASON_COUNTS_TTL_MS = 60 * 60 * 1e3;
     var seasonCountsCache = /* @__PURE__ */ new Map();
@@ -414,7 +414,7 @@ var require_anime_episode_candidates = __commonJS({
     function fetchTmdbSeasonEpisodeCounts(tmdbId) {
       return __async(this, null, function* () {
         const key = String(tmdbId || "").trim();
-        if (!TMDB_API_KEY || !/^\d+$/.test(key) || typeof fetch !== "function") return [];
+        if (!TMDB_API_KEY2 || !/^\d+$/.test(key) || typeof fetch !== "function") return [];
         const cached = getCached2(seasonCountsCache, key);
         if (cached !== void 0) return cached;
         if (seasonCountsInFlight.has(key)) return seasonCountsInFlight.get(key);
@@ -423,7 +423,7 @@ var require_anime_episode_candidates = __commonJS({
           const timeoutController = canUseAbortTimeout ? new AbortController() : null;
           const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), TMDB_TIMEOUT_MS) : null;
           try {
-            const url = `https://api.themoviedb.org/3/tv/${encodeURIComponent(key)}?api_key=${TMDB_API_KEY}`;
+            const url = `https://api.themoviedb.org/3/tv/${encodeURIComponent(key)}?api_key=${TMDB_API_KEY2}`;
             const fetchOptions = timeoutController ? { signal: timeoutController.signal } : void 0;
             const response = yield fetch(url, fetchOptions);
             if (!response.ok) return setCached2(seasonCountsCache, key, [], SEASON_COUNTS_TTL_MS);
@@ -515,8 +515,10 @@ var TTL = {
   http: 5 * 60 * 1e3,
   page: 15 * 60 * 1e3,
   info: 5 * 60 * 1e3,
-  mapping: 2 * 60 * 1e3
+  mapping: 2 * 60 * 1e3,
+  title: 30 * 60 * 1e3
 };
+var TMDB_API_KEY = "68e094699525b18a70bab2f86b1fa706";
 var caches = {
   http: /* @__PURE__ */ new Map(),
   mapping: /* @__PURE__ */ new Map(),
@@ -1287,6 +1289,219 @@ function extractTmdbIdFromMappingPayload(mappingPayload) {
   const text = String(candidate || "").trim();
   return /^\d+$/.test(text) ? text : null;
 }
+function stripHtmlTags(raw) {
+  return decodeHtmlEntities(String(raw || "").replace(/<[^>]+>/g, " ")).replace(/\s{2,}/g, " ").trim();
+}
+function normalizeAnimeWorldSearchText(value) {
+  return stripHtmlTags(value).toLowerCase().replace(/\b(?:sub\s*ita|sub|ita|dub|dubbed|streaming|animeworld)\b/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+function splitAnimeWorldSearchTokens(value) {
+  const stopWords = /* @__PURE__ */ new Set(["a", "an", "and", "e", "il", "la", "le", "lo", "of", "the"]);
+  return normalizeAnimeWorldSearchText(value).split(/\s+/).filter((token) => token.length > 1 && !stopWords.has(token));
+}
+function parseAnimeWorldSearchResults(html) {
+  const byPath = /* @__PURE__ */ new Map();
+  const anchorRegex = /<a\b([^>]*href=(?:"[^"]*\/play\/[^"]*"|'[^']*\/play\/[^']*')[^>]*)>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = anchorRegex.exec(String(html || ""))) !== null) {
+    const attrs = parseTagAttributes(match[1]);
+    const path = normalizeAnimeWorldPath(attrs.href);
+    if (!path) continue;
+    const title = sanitizeAnimeTitle(stripHtmlTags(match[2])) || sanitizeAnimeTitle(attrs.title) || sanitizeAnimeTitle(attrs["data-title"]) || sanitizeAnimeTitle(attrs["data-jtitle"]) || "";
+    const jtitle = sanitizeAnimeTitle(attrs["data-jtitle"]) || "";
+    const existing = byPath.get(path);
+    if (!existing) {
+      byPath.set(path, { path, title, jtitle });
+    } else {
+      if (!existing.title && title) existing.title = title;
+      if (!existing.jtitle && jtitle) existing.jtitle = jtitle;
+    }
+  }
+  return Array.from(byPath.values());
+}
+function detectExplicitAnimeWorldSeason(result) {
+  const text = normalizeAnimeWorldSearchText(
+    `${(result == null ? void 0 : result.title) || ""} ${(result == null ? void 0 : result.jtitle) || ""} ${(result == null ? void 0 : result.path) || ""}`
+  );
+  const slug = String((result == null ? void 0 : result.path) || "").toLowerCase();
+  const slugMatch = slug.match(/-([2-9])(?:[._-]|$)/);
+  if (slugMatch) return Number.parseInt(slugMatch[1], 10);
+  const seasonMatch = text.match(/(?:^|\s)(?:s(?:eason)?\s*)?([2-9])(?:\s|$)/);
+  return seasonMatch ? Number.parseInt(seasonMatch[1], 10) : null;
+}
+function scoreAnimeWorldSearchResult(result, titleCandidates, requestedSeason) {
+  const haystack = normalizeAnimeWorldSearchText(
+    `${(result == null ? void 0 : result.title) || ""} ${(result == null ? void 0 : result.jtitle) || ""} ${(result == null ? void 0 : result.path) || ""}`
+  );
+  if (!haystack) return null;
+  let bestScore = 0;
+  for (const candidate of titleCandidates) {
+    const needle = normalizeAnimeWorldSearchText(candidate);
+    if (!needle) continue;
+    const candidateTokens = splitAnimeWorldSearchTokens(candidate);
+    const haystackTokens = new Set(splitAnimeWorldSearchTokens(haystack));
+    const overlap = candidateTokens.filter((token) => haystackTokens.has(token)).length;
+    if (overlap < Math.min(2, candidateTokens.length)) continue;
+    let score = overlap * 12;
+    if (haystack.includes(needle)) score += 80;
+    if (needle.includes(normalizeAnimeWorldSearchText((result == null ? void 0 : result.title) || ""))) score += 20;
+    const resultTokens = splitAnimeWorldSearchTokens(
+      (result == null ? void 0 : result.title) || (result == null ? void 0 : result.jtitle) || (result == null ? void 0 : result.path) || ""
+    );
+    const candidateTokenSet = new Set(candidateTokens);
+    const extraTokens = resultTokens.filter((token) => !candidateTokenSet.has(token) && token !== "tv");
+    score -= extraTokens.length * 8;
+    bestScore = Math.max(bestScore, score);
+  }
+  if (bestScore <= 0) return null;
+  const explicitSeason = detectExplicitAnimeWorldSeason(result);
+  const season = normalizeRequestedSeason(requestedSeason) || 1;
+  const isMovie = /\b(?:movie|film|0)\b/i.test(
+    normalizeAnimeWorldSearchText(`${(result == null ? void 0 : result.title) || ""} ${(result == null ? void 0 : result.jtitle) || ""} ${(result == null ? void 0 : result.path) || ""}`)
+  );
+  if (season > 1) {
+    if (explicitSeason === season) bestScore += 100;
+    else if (explicitSeason && explicitSeason !== season) return null;
+    else bestScore -= 20;
+  } else if (explicitSeason && explicitSeason > 1) {
+    return null;
+  }
+  if (isMovie) bestScore -= 120;
+  return bestScore > 0 ? { result, score: bestScore, explicitSeason } : null;
+}
+function selectAnimeWorldSearchPaths(results, titleCandidates, requestedSeason) {
+  const scored = (Array.isArray(results) ? results : []).map((result) => scoreAnimeWorldSearchResult(result, titleCandidates, requestedSeason)).filter(Boolean).sort((a, b) => b.score - a.score);
+  const season = normalizeRequestedSeason(requestedSeason) || 1;
+  const preferred = season > 1 ? scored.filter((entry) => entry.explicitSeason === season) : scored.filter((entry) => !entry.explicitSeason);
+  const candidates = preferred.length > 0 ? preferred : scored;
+  return uniqueStrings(candidates.map((entry) => entry.result.path)).slice(0, 2);
+}
+function extractTitleCandidates(mappingPayload, providerContext = null) {
+  const values = [
+    mappingPayload == null ? void 0 : mappingPayload.title,
+    mappingPayload == null ? void 0 : mappingPayload.name,
+    mappingPayload == null ? void 0 : mappingPayload.seasonName,
+    mappingPayload == null ? void 0 : mappingPayload.tmdbSeasonTitle,
+    providerContext == null ? void 0 : providerContext.title,
+    providerContext == null ? void 0 : providerContext.name,
+    providerContext == null ? void 0 : providerContext.tmdbTitle,
+    providerContext == null ? void 0 : providerContext.tmdbSeasonTitle
+  ];
+  for (const list of [mappingPayload == null ? void 0 : mappingPayload.titleHints, providerContext == null ? void 0 : providerContext.titleHints]) {
+    if (Array.isArray(list)) values.push(...list);
+  }
+  return uniqueStrings(values);
+}
+function collectTmdbTitles(payload) {
+  var _a;
+  if (!payload || typeof payload !== "object") return [];
+  const values = [payload.name, payload.original_name, payload.title, payload.original_title];
+  if (Array.isArray(payload.also_known_as)) values.push(...payload.also_known_as);
+  const alternativeTitles = (_a = payload.alternative_titles) == null ? void 0 : _a.results;
+  if (Array.isArray(alternativeTitles)) {
+    for (const title of alternativeTitles) {
+      values.push(title == null ? void 0 : title.title, title == null ? void 0 : title.name);
+    }
+  }
+  return uniqueStrings(values);
+}
+function parseTmdbPublicTitleCandidates(html) {
+  const text = String(html || "");
+  const values = [];
+  const titleMatch = text.match(/<title>([\s\S]*?)<\/title>/i);
+  if (titleMatch) values.push(titleMatch[1]);
+  const ogTitleMatch = text.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["'][^>]*>/i);
+  if (ogTitleMatch) values.push(ogTitleMatch[1]);
+  return uniqueStrings(
+    values.map(
+      (value) => stripHtmlTags(value).replace(/\s*\((?:TV Series|Serie TV)[^)]*\)\s*/i, " ").replace(/\s*(?:--|—)\s*The Movie Database.*$/i, " ").replace(/\s*\|\s*The Movie Database.*$/i, " ").trim()
+    ).filter(Boolean)
+  );
+}
+function fetchTmdbTitleCandidates(tmdbId) {
+  return __async(this, null, function* () {
+    const id = String(tmdbId || "").trim();
+    if (!/^\d+$/.test(id)) return [];
+    const languages = ["it-IT", "en-US"];
+    const titles = [];
+    for (const language of languages) {
+      const params = new URLSearchParams({
+        api_key: TMDB_API_KEY,
+        language
+      });
+      const url = `https://api.themoviedb.org/3/tv/${encodeURIComponent(id)}?${params.toString()}`;
+      try {
+        const payload = yield fetchResource(url, {
+          as: "json",
+          ttlMs: TTL.title,
+          cacheKey: `tmdb-title:${id}:${language}`,
+          timeoutMs: FETCH_TIMEOUT
+        });
+        titles.push(...collectTmdbTitles(payload));
+      } catch (error) {
+        console.error("[AnimeWorld] TMDB title lookup failed:", error.message);
+      }
+    }
+    if (titles.length === 0) {
+      const publicUrl = `https://www.themoviedb.org/tv/${encodeURIComponent(id)}`;
+      try {
+        const html = yield fetchResource(publicUrl, {
+          as: "text",
+          ttlMs: TTL.title,
+          cacheKey: `tmdb-public-title:${id}`,
+          timeoutMs: FETCH_TIMEOUT
+        });
+        titles.push(...parseTmdbPublicTitleCandidates(html));
+      } catch (error) {
+        console.error("[AnimeWorld] TMDB public title lookup failed:", error.message);
+      }
+    }
+    return uniqueStrings(titles);
+  });
+}
+function resolveAnimeWorldPathsByTitle(lookup, mappingPayload, providerContext = null) {
+  return __async(this, null, function* () {
+    const provider = String((lookup == null ? void 0 : lookup.provider) || "").toLowerCase();
+    const tmdbId = provider === "tmdb" ? String((lookup == null ? void 0 : lookup.externalId) || "").trim() : String((providerContext == null ? void 0 : providerContext.tmdbId) || extractTmdbIdFromMappingPayload(mappingPayload) || "").trim();
+    if (!/^\d+$/.test(tmdbId)) return [];
+    const titleCandidates = uniqueStrings([
+      ...extractTitleCandidates(mappingPayload, providerContext),
+      ...yield fetchTmdbTitleCandidates(tmdbId)
+    ]);
+    if (titleCandidates.length === 0) return [];
+    for (const title of titleCandidates.slice(0, 5)) {
+      const searchUrl = `${getWorldBaseUrl()}/search?keyword=${encodeURIComponent(title)}`;
+      try {
+        const html = yield fetchResource(searchUrl, {
+          as: "text",
+          ttlMs: TTL.page,
+          cacheKey: `animeworld-search:${title}`,
+          timeoutMs: FETCH_TIMEOUT
+        });
+        const results = parseAnimeWorldSearchResults(html);
+        const paths = selectAnimeWorldSearchPaths(results, titleCandidates, lookup == null ? void 0 : lookup.season);
+        if (paths.length > 0) return paths;
+      } catch (error) {
+        console.error("[AnimeWorld] title search failed:", error.message);
+      }
+    }
+    return [];
+  });
+}
+function withFallbackMappingPayload(mappingPayload, lookup) {
+  if (mappingPayload && typeof mappingPayload === "object") return mappingPayload;
+  return {
+    requested: {
+      provider: (lookup == null ? void 0 : lookup.provider) || "tmdb",
+      externalId: (lookup == null ? void 0 : lookup.externalId) || null,
+      season: lookup == null ? void 0 : lookup.season,
+      episode: lookup == null ? void 0 : lookup.episode
+    },
+    mappings: {
+      ids: String((lookup == null ? void 0 : lookup.provider) || "").toLowerCase() === "tmdb" ? { tmdb: lookup.externalId } : {}
+    }
+  };
+}
 function mapLimit(values, limit, mapper) {
   return __async(this, null, function* () {
     if (!Array.isArray(values) || values.length === 0) return [];
@@ -1354,6 +1569,17 @@ function getStreams(id, type, season, episode, providerContext = null) {
           }
         }
       }
+      if (animePaths.length === 0) {
+        const titleFallbackPaths = yield resolveAnimeWorldPathsByTitle(
+          lookup,
+          mappingPayload,
+          providerContext
+        );
+        if (titleFallbackPaths.length > 0) {
+          mappingPayload = withFallbackMappingPayload(mappingPayload, lookup);
+          animePaths = titleFallbackPaths;
+        }
+      }
       if (animePaths.length === 0) return [];
       const normalizedType = String(type || "").toLowerCase();
       const mediaType = normalizedType === "movie" ? "movie" : "tv";
@@ -1388,4 +1614,10 @@ function getStreams(id, type, season, episode, providerContext = null) {
     }
   });
 }
-module.exports = { getStreams };
+module.exports = {
+  getStreams,
+  _private: {
+    parseAnimeWorldSearchResults,
+    selectAnimeWorldSearchPaths
+  }
+};
