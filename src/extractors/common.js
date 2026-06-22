@@ -8,7 +8,6 @@ const USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML
 function getProxiedUrl(url) {
   let proxyUrl = null;
   try {
-    // Check global variable (set by stremio_addon.js)
     if (typeof global !== 'undefined' && global.CF_PROXY_URL) {
       proxyUrl = global.CF_PROXY_URL;
     }

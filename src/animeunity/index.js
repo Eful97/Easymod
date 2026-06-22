@@ -1001,7 +1001,6 @@ function resolveLookupRequest(id, season, episode, providerContext = null) {
         : null;
 
     if (explicit.provider === "kitsu") {
-      // Prefer season embedded in id (Stremio); keep season param when absent (Nuvio).
       if (explicitSeason !== null) {
         requestedSeason = explicitSeason;
       }

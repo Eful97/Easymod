@@ -100,7 +100,7 @@ function execPythonBypass(url, provider, options = {}) {
         
         // Find python executable (prefer .venv if exists, fallback to python3 or python)
         const venvPython = path.join(process.cwd(), '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-        let pythonExe = 'python3'; // Default for Linux/Docker
+        let pythonExe = 'python3';
         if (fs.existsSync(venvPython)) {
             pythonExe = venvPython;
         } else if (process.platform === 'win32') {

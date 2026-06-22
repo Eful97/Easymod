@@ -73,14 +73,6 @@ function normalizeProviderId(providerName) {
 }
 
 function formatStream(stream, providerName) {
-    // 1. Filter MixDrop (removed from shared formatter, handled in Stremio addon separately)
-    // const server = (stream.server || "").toLowerCase();
-    // const sName = (stream.name || "").toLowerCase();
-    // const sTitle = (stream.title || "").toLowerCase();
-    // if (server.includes('mixdrop') || sName.includes('mixdrop') || sTitle.includes('mixdrop')) {
-    //     return null;
-    // }
-
     // Format resolution
     let quality = stream.quality || '';
     if (quality === '2160p') quality = '🔥4K UHD';
@@ -187,12 +179,10 @@ function formatStream(stream, providerName) {
         ...stream, // Keep original properties
         name: finalName,
         title: finalTitle,
-        // Metadata for Stremio UI reconstruction (safer names for RN)
         providerName: pName,
         qualityTag: quality,
         description: desc,
         originalTitle: stream.title || 'Stream',
-        // Ensure language is set for Stremio/Nuvio sorting
         language: language,
         // Mark as formatted
         _nuvio_formatted: true,

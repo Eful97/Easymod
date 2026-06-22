@@ -312,12 +312,10 @@ var require_formatter = __commonJS({
         // Keep original properties
         name: finalName,
         title: finalTitle,
-        // Metadata for Stremio UI reconstruction (safer names for RN)
         providerName: pName,
         qualityTag: quality,
         description: desc,
         originalTitle: stream.title || "Stream",
-        // Ensure language is set for Stremio/Nuvio sorting
         language,
         // Mark as formatted
         _nuvio_formatted: true,
