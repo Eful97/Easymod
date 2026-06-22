@@ -251,12 +251,13 @@ var require_vidxgo = __commonJS({
       "Priority": "u=0, i"
     };
     function xorDecrypt(b64, key) {
-      const decoded = Buffer.from(b64, "base64");
-      const result = Buffer.alloc(decoded.length);
-      for (let i = 0; i < decoded.length; i++) {
-        result[i] = decoded[i] ^ key.charCodeAt(i % key.length);
+      var binaryStr = typeof atob !== "undefined" ? atob(b64) : Buffer.from(b64, "base64").toString("binary");
+      var len = binaryStr.length;
+      var result = new Array(len);
+      for (var i = 0; i < len; i++) {
+        result[i] = String.fromCharCode(binaryStr.charCodeAt(i) ^ key.charCodeAt(i % key.length));
       }
-      return result.toString("utf-8");
+      return result.join("");
     }
     var XOR_PATTERN = /var\s+\w+\s*=\s*'([\w]+)'\s*,?\s*d\s*=\s*atob\s*\(\s*'([A-Za-z0-9+/=]+)'\s*\)/g;
     var CURRENT_SRC_PATTERN = /\bcurrentSrc\s*=\s*["'](https?:[^"']+?\.m3u8[^"']*)["']/;
@@ -462,63 +463,107 @@ var require_quality_helper = __commonJS({
 var IS_SERVER = typeof process !== "undefined" && process.versions && process.versions.node;
 var { formatStream } = require_formatter();
 if (!IS_SERVER) {
+  extractVidxGo = require_vidxgo().extractVidxGo;
+  checkQualityFromPlaylist = require_quality_helper().checkQualityFromPlaylist;
+  getQualityFromName = function(q) {
+    if (!q) return "Unknown";
+    var ql = q.toUpperCase();
+    if (ql === "ORG" || ql === "ORIGINAL") return "Original";
+    if (ql === "4K" || ql === "2160P") return "4K";
+    if (ql === "1440P" || ql === "2K") return "1440p";
+    if (ql === "1080P" || ql === "FHD") return "1080p";
+    if (ql === "720P" || ql === "HD") return "720p";
+    if (ql === "480P" || ql === "SD") return "480p";
+    if (ql === "360P") return "360p";
+    if (ql === "240P") return "240p";
+    var m = q.match(/(\d{3,4})[pP]?/);
+    if (m) {
+      var r = parseInt(m[1]);
+      if (r >= 2160) return "4K";
+      if (r >= 1440) return "1440p";
+      if (r >= 1080) return "1080p";
+      if (r >= 720) return "720p";
+      if (r >= 480) return "480p";
+      if (r >= 360) return "360p";
+      return "240p";
+    }
+    return "Unknown";
+  };
+  function resolveImdbId(id) {
+    return __async(this, null, function* () {
+      var imdbId = String(id || "").replace("tmdb:", "");
+      if (/^tt\d+$/.test(imdbId)) return imdbId;
+      if (/^\d+$/.test(imdbId)) {
+        var key = "68e094699525b18a70bab2f86b1fa706";
+        try {
+          var r = yield fetch("https://api.themoviedb.org/3/movie/" + imdbId + "?api_key=" + key);
+          if (r.ok) {
+            var d = yield r.json();
+            if (d.imdb_id) return d.imdb_id;
+          }
+          var r2 = yield fetch("https://api.themoviedb.org/3/movie/" + imdbId + "/external_ids?api_key=" + key);
+          if (r2.ok) {
+            var d2 = yield r2.json();
+            if (d2.imdb_id) return d2.imdb_id;
+          }
+          var r3 = yield fetch("https://api.themoviedb.org/3/tv/" + imdbId + "?api_key=" + key);
+          if (r3.ok) {
+            var d3 = yield r3.json();
+            if (d3.imdb_id) return d3.imdb_id;
+          }
+          var r4 = yield fetch("https://api.themoviedb.org/3/tv/" + imdbId + "/external_ids?api_key=" + key);
+          if (r4.ok) {
+            var d4 = yield r4.json();
+            if (d4.imdb_id) return d4.imdb_id;
+          }
+        } catch (e) {
+        }
+      }
+      return null;
+    });
+  }
   module.exports = {
     getStreams: (id, type, season, episode) => __async(null, null, function* () {
-      const settings = typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS || {};
-      const proxyUrl = settings.proxyUrl;
-      const proxyPassword = settings.proxyPassword;
-      if (!proxyUrl || !proxyPassword) {
-        console.warn("[VidxGo-Client] Disabled: proxyUrl and proxyPassword must be configured.");
-        return [];
-      }
       try {
-        let imdbId = id.toString().replace("tmdb:", "");
-        const isMovie = String(type).toLowerCase() === "movie";
-        if (/^\d+$/.test(imdbId)) {
-          const endpoint = isMovie ? "movie" : "tv";
-          const TMDB_API_KEY = "68e094699525b18a70bab2f86b1fa706";
-          const url = `https://api.themoviedb.org/3/${endpoint}/${imdbId}?api_key=${TMDB_API_KEY}`;
-          const response = yield fetch(url);
-          if (response.ok) {
-            const data = yield response.json();
-            if (data.imdb_id) {
-              imdbId = data.imdb_id;
-            } else {
-              const extUrl = `https://api.themoviedb.org/3/${endpoint}/${imdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-              const extResponse = yield fetch(extUrl);
-              if (extResponse.ok) {
-                const extData = yield extResponse.json();
-                if (extData.imdb_id) imdbId = extData.imdb_id;
-              }
-            }
-          }
+        var settings = typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS || {};
+        var proxyUrl = settings.proxyUrl;
+        var proxyPassword = settings.proxyPassword;
+        var imdbId = yield resolveImdbId(id);
+        if (!imdbId) return [];
+        var isMovie = String(type).toLowerCase() === "movie";
+        var effectiveSeason = parseInt(String(season || ""), 10) || 1;
+        var effectiveEpisode = parseInt(String(episode || ""), 10) || 1;
+        var vidxgoUrl = isMovie ? "https://v.vidxgo.co/" + imdbId : "https://v.vidxgo.co/" + imdbId + "/" + effectiveSeason + "/" + effectiveEpisode;
+        var displayName = isMovie ? "Film" : "Serie " + effectiveSeason + "x" + effectiveEpisode;
+        if (proxyUrl && proxyPassword) {
+          var cleanProxy = proxyUrl.endsWith("/") ? proxyUrl.slice(0, -1) : proxyUrl;
+          var targetUrl = cleanProxy + "/extractor/video.m3u8?host=vidxgo&d=" + encodeURIComponent(vidxgoUrl) + "&redirect_stream=true&api_password=" + proxyPassword;
+          return [formatStream({
+            url: targetUrl,
+            name: "VidxGo",
+            title: displayName,
+            quality: "1080p",
+            language: "Italian",
+            size: "proxied",
+            type: "direct",
+            headers: null,
+            behaviorHints: { proxyHeaders: null, headers: null }
+          }, "VidxGo")].filter(Boolean);
         }
-        if (!imdbId.startsWith("tt")) {
-          console.warn("[VidxGo-Client] Could not resolve IMDB ID for ID:", id);
-          return [];
-        }
-        const effectiveSeason = parseInt(String(season || ""), 10) || 1;
-        const effectiveEpisode = parseInt(String(episode || ""), 10) || 1;
-        const vidxgoUrl = isMovie ? `https://v.vidxgo.co/${imdbId}` : `https://v.vidxgo.co/${imdbId}/${effectiveSeason}/${effectiveEpisode}`;
-        const cleanProxyUrl = proxyUrl.endsWith("/") ? proxyUrl.slice(0, -1) : proxyUrl;
-        const targetUrl = `${cleanProxyUrl}/extractor/video.m3u8?host=vidxgo&d=${vidxgoUrl}&redirect_stream=true&api_password=${proxyPassword}`;
-        const contentTitle = isMovie ? "Film" : "Serie";
-        const displayName = isMovie ? contentTitle : `${contentTitle} ${effectiveSeason}x${effectiveEpisode}`;
-        const result = {
-          url: targetUrl,
+        var extracted = yield extractVidxGo(vidxgoUrl);
+        if (!extracted || !extracted.url) return [];
+        var quality = "HD";
+        var detected = yield checkQualityFromPlaylist(extracted.url, extracted.headers);
+        if (detected) quality = detected;
+        return [formatStream({
+          url: extracted.url,
+          headers: extracted.headers,
           name: "VidxGo",
           title: displayName,
-          quality: "1080p",
-          language: "Italian",
-          size: "proxied",
+          quality: getQualityFromName(quality),
           type: "direct",
-          headers: null,
-          behaviorHints: {
-            proxyHeaders: null,
-            headers: null
-          }
-        };
-        return [formatStream(result, "VidxGo")].filter((s) => s !== null);
+          language: "Italian"
+        }, "VidxGo")].filter(Boolean);
       } catch (e) {
         console.error("[VidxGo-Client] Error:", e);
         return [];
@@ -754,7 +799,7 @@ if (!IS_SERVER) {
       }
     });
   };
-  getMappingApiUrl2 = getMappingApiUrl, normalizeConfigBoolean2 = normalizeConfigBoolean, getMappingLanguage2 = getMappingLanguage, getQualityFromName2 = getQualityFromName, getImdbId2 = getImdbId, getTitleFromIds2 = getTitleFromIds, getIdsFromMapping2 = getIdsFromMapping, getStreams2 = getStreams;
+  getMappingApiUrl2 = getMappingApiUrl, normalizeConfigBoolean2 = normalizeConfigBoolean, getMappingLanguage2 = getMappingLanguage, getQualityFromName = getQualityFromName, getImdbId2 = getImdbId, getTitleFromIds2 = getTitleFromIds, getIdsFromMapping2 = getIdsFromMapping, getStreams2 = getStreams;
   __async2 = (__this, __arguments, generator) => {
     return new Promise((resolve, reject) => {
       var fulfilled = (value) => {
@@ -783,11 +828,13 @@ if (!IS_SERVER) {
   const STEP_BENCH_ENABLED = String(process.env.PROVIDER_STEP_BENCH || "").trim().toLowerCase() === "1";
   module.exports = { getStreams };
 }
+var extractVidxGo;
+var checkQualityFromPlaylist;
+var getQualityFromName;
 var __async2;
 var getMappingApiUrl2;
 var normalizeConfigBoolean2;
 var getMappingLanguage2;
-var getQualityFromName2;
 var getImdbId2;
 var getTitleFromIds2;
 var getIdsFromMapping2;

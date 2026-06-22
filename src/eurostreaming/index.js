@@ -157,6 +157,35 @@ function _extractCookies(r, finalUrl, jar) {
   } catch (e) { }
 }
 
+function _fetchDirectOrProxy(curUrl, fetchOpts) {
+  if (curUrl.includes('clicka.cc') || curUrl.includes('safego.cc')) {
+    var proxyUrl = 'https://vidclick.leanhhu061208-775.workers.dev/?url=' + encodeURIComponent(curUrl);
+    var proxyOpts = {};
+    for (var k in fetchOpts) proxyOpts[k] = fetchOpts[k];
+    proxyOpts.headers = {};
+    for (var h in fetchOpts.headers) proxyOpts.headers[h] = fetchOpts.headers[h];
+    proxyOpts.headers['User-Agent'] = ES_UA;
+    proxyOpts.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
+    proxyOpts.headers['Accept-Language'] = 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7';
+    proxyOpts.headers['Sec-Ch-Ua'] = '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"';
+    proxyOpts.headers['Sec-Ch-Ua-Mobile'] = '?0';
+    proxyOpts.headers['Sec-Ch-Ua-Platform'] = '"Windows"';
+    proxyOpts.headers['Sec-Fetch-Dest'] = 'document';
+    proxyOpts.headers['Sec-Fetch-Mode'] = 'navigate';
+    proxyOpts.headers['Sec-Fetch-Site'] = 'none';
+    proxyOpts.headers['Sec-Fetch-User'] = '?1';
+    proxyOpts.headers['Upgrade-Insecure-Requests'] = '1';
+    proxyOpts.headers['Connection'] = 'keep-alive';
+    return fetch(proxyUrl, { ...proxyOpts, redirect: 'manual' }).then(function (r) {
+      if (r.ok || (r.status >= 300 && r.status < 400)) return r;
+      return fetch(curUrl, { ...fetchOpts, redirect: 'manual' });
+    }).catch(function () {
+      return fetch(curUrl, { ...fetchOpts, redirect: 'manual' });
+    });
+  }
+  return fetch(curUrl, { ...fetchOpts, redirect: 'manual' });
+}
+
 function _follow(url, options, maxHops, jar) {
   return new Promise(function (resolve, reject) {
     var hops = 0;
@@ -170,30 +199,11 @@ function _follow(url, options, maxHops, jar) {
         fetchOpts.headers['Cookie'] = cookieStr;
       }
 
-      // Proxy clicka.cc and safego.cc through Cloudflare Worker
-      var finalFetchUrl = curUrl;
-      if (curUrl.includes('clicka.cc') || curUrl.includes('safego.cc')) {
-        finalFetchUrl = 'https://vidclick.leanhhu061208-775.workers.dev/?url=' + encodeURIComponent(curUrl);
-        fetchOpts.headers = fetchOpts.headers || {};
-        fetchOpts.headers['User-Agent'] = ES_UA;
-        fetchOpts.headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
-        fetchOpts.headers['Accept-Language'] = 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7';
-        fetchOpts.headers['Sec-Ch-Ua'] = '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"';
-        fetchOpts.headers['Sec-Ch-Ua-Mobile'] = '?0';
-        fetchOpts.headers['Sec-Ch-Ua-Platform'] = '"Windows"';
-        fetchOpts.headers['Sec-Fetch-Dest'] = 'document';
-        fetchOpts.headers['Sec-Fetch-Mode'] = 'navigate';
-        fetchOpts.headers['Sec-Fetch-Site'] = 'none';
-        fetchOpts.headers['Sec-Fetch-User'] = '?1';
-        fetchOpts.headers['Upgrade-Insecure-Requests'] = '1';
-        fetchOpts.headers['Connection'] = 'keep-alive';
-      }
-
       var fetchTimeoutMs = fetchOpts.timeout || 15000;
       var fetchTimer = setTimeout(function () {
         reject(new Error('Follow fetch timeout ' + fetchTimeoutMs + 'ms'));
       }, fetchTimeoutMs);
-      fetch(finalFetchUrl, { ...fetchOpts, redirect: 'manual' }).then(function (r) {
+      _fetchDirectOrProxy(curUrl, fetchOpts).then(function (r) {
         clearTimeout(fetchTimer);
         var finalUrl = curUrl;
         _extractCookies(r, finalUrl, jar);
@@ -1383,7 +1393,7 @@ function _tmdbSeriesNames(id) {
 // =========================================================================
 // ENTRY POINT
 // =========================================================================
-function getStreams(id, type, season, episode) {
+function getStreams(id, type, season, episode, providerContext) {
   return new Promise(function (resolve, reject) {
     var rawId = String(id || '').replace(/^tmdb:/, '');
     var mediaType = String(type || 'movie').toLowerCase();
@@ -1393,19 +1403,20 @@ function getStreams(id, type, season, episode) {
     var seasonNum = Number(season) || 1;
     var episodeNum = Number(episode) || 1;
 
-    // Determine best IMDb ID and TMDB ID available.
-    // Nuvio server sets sandbox.__imdb_id = original IMDb/TMDB id.
-    // getStreams(id) receives the TMDB numeric id after Cinemeta translation.
+    var ctxTmdb = providerContext && /^\d+$/.test(String(providerContext.tmdbId || '')) ? String(providerContext.tmdbId) : null;
+    var ctxImdb = providerContext && /^tt\d+$/i.test(String(providerContext.imdbId || '')) ? String(providerContext.imdbId) : null;
     var sandboxImdb = (typeof __imdb_id !== 'undefined' && __imdb_id) ? String(__imdb_id) : null;
     var isImdb = function (s) { return /^tt\d+$/.test(String(s || '')); };
     var isNumeric = function (s) { return /^\d+$/.test(String(s || '')); };
 
-    var imdbCandidate = null; // tt... for Cinemeta
-    var tmdbCandidate = null; // numeric for TMDB API
+    var imdbCandidate = null;
+    var tmdbCandidate = null;
 
     if (isImdb(rawId)) { imdbCandidate = rawId; }
     else if (isNumeric(rawId)) { tmdbCandidate = rawId; }
 
+    if (ctxImdb && isImdb(ctxImdb)) { imdbCandidate = ctxImdb; }
+    else if (ctxTmdb && isNumeric(ctxTmdb) && !tmdbCandidate) { tmdbCandidate = ctxTmdb; }
     if (sandboxImdb && isImdb(sandboxImdb)) { imdbCandidate = sandboxImdb; }
     else if (sandboxImdb && isNumeric(sandboxImdb) && !tmdbCandidate) { tmdbCandidate = sandboxImdb; }
 
@@ -1515,9 +1526,23 @@ function getEsDomain(cb) {
           }
         }
       }
-      cb('https://eurostreamings.makeup');
+      tryFallbackDomains();
     })
-    .catch(function () { cb('https://eurostreamings.makeup'); });
+    .catch(function () { tryFallbackDomains(); });
+
+  function tryFallbackDomains() {
+    var fallbacks = ['eurostreamings.makeup', 'eurostreaming.cfd', 'eurostreaming.bond', 'eurostreamings.xyz'];
+    var fi = 0;
+    function nextFb() {
+      if (fi >= fallbacks.length) return cb(null);
+      var dom = fallbacks[fi++];
+      if (!dom.startsWith('http')) dom = 'https://' + dom;
+      fetch(dom + '/', { timeout: 5000 }).then(function (r) {
+        cb(r.ok ? dom : nextFb());
+      }).catch(function () { nextFb(); });
+    }
+    nextFb();
+  }
 }
 
 function searchSeries(domain, title, seasonNum, cb) {

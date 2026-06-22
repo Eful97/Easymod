@@ -1,4 +1,5 @@
 var TMDB_API_KEY = '68e094699525b18a70bab2f86b1fa706';
+var CB01_DOMAINS = ['cb01uno.sbs', 'cb01uno.mom', 'cb01uno.rest', 'cb01uno.foo', 'cb01.click'];
 
 function _cbTmdbMeta(id, type) {
   return new Promise(function(resolve) {
@@ -39,12 +40,18 @@ function _cbTmdbMeta(id, type) {
   });
 }
 
-function getStreams(id, type, season, episode) {
+function getStreams(id, type, season, episode, providerContext) {
   return new Promise(function (resolve, reject) {
-    var tmdbId = String(id || '').replace(/^tmdb:/, '');
-    var imdbId = (typeof __imdb_id !== 'undefined' ? __imdb_id : tmdbId);
+    var rawId = String(id || '').replace(/^tmdb:/, '');
+    var ctxTmdb = providerContext && /^\d+$/.test(String(providerContext.tmdbId || '')) ? String(providerContext.tmdbId) : null;
+    var ctxImdb = providerContext && /^tt\d+$/i.test(String(providerContext.imdbId || '')) ? String(providerContext.imdbId) : null;
     var mediaType = String(type || 'movie').toLowerCase();
     var cinemetaType = mediaType === 'tv' ? 'series' : mediaType;
+
+    if (mediaType === 'series' || mediaType === 'tv') {
+      console.warn('[CB01] Series not supported on current CB01 site, returning empty.');
+      return resolve([]);
+    }
 
     function doSearch(title, year) {
       searchCB01(title, year, mediaType, season, episode, function (pageUrl) {
@@ -55,10 +62,10 @@ function getStreams(id, type, season, episode) {
       });
     }
 
-    getCinemetaMeta(cinemetaType, imdbId, function (err, meta) {
+    var searchId = ctxImdb || rawId;
+    getCinemetaMeta(cinemetaType, searchId, function (err, meta) {
       if (meta && meta.name) return doSearch(meta.name, meta.releaseInfo || '');
-      // Cinemeta failed — try TMDB API
-      _cbTmdbMeta(imdbId, mediaType).then(function(tmdbMeta) {
+      _cbTmdbMeta(ctxTmdb || rawId, mediaType).then(function(tmdbMeta) {
         if (tmdbMeta && tmdbMeta.name) return doSearch(tmdbMeta.name, tmdbMeta.releaseInfo || '');
         resolve([]);
       });
@@ -107,23 +114,19 @@ function searchCB01(title, year, mediaType, season, episode, cb) {
   var trySearch = function (idx) {
     if (idx >= searchTitles.length) return cb(null);
     var q = searchTitles[idx];
-    var searchUrl = 'https://cb01uno.sbs/' + searchPath + '?s=' + encodeURIComponent(q);
-    cb01Fetch(searchUrl, function (err, html) {
-      if (err || !html) {
-        cb01Fetch('https://cb01uno.mom/' + searchPath + '?s=' + encodeURIComponent(q), function (err2, html2) {
-          if (err2 || !html2) return trySearch(idx + 1);
-          findBestMatch(html2, q, year, function (pageUrl) {
-            if (!pageUrl) return trySearch(idx + 1);
-            cb(pageUrl);
-          });
+    var tryDomain = function (di) {
+      if (di >= CB01_DOMAINS.length) return trySearch(idx + 1);
+      var domain = CB01_DOMAINS[di];
+      var searchUrl = 'https://' + domain + '/' + searchPath + '?s=' + encodeURIComponent(q);
+      cb01Fetch(searchUrl, function (err, html) {
+        if (err || !html) return tryDomain(di + 1);
+        findBestMatch(html, q, year, function (pageUrl) {
+          if (!pageUrl) return tryDomain(di + 1);
+          cb(pageUrl);
         });
-        return;
-      }
-      findBestMatch(html, q, year, function (pageUrl) {
-        if (!pageUrl) return trySearch(idx + 1);
-        cb(pageUrl);
       });
-    });
+    };
+    tryDomain(0);
   };
   trySearch(0);
 }
@@ -175,7 +178,10 @@ var MD_HOSTS = [
   'miixdrop.net', 'm1xdrop.net', 'mxdrop.net',
   'mixdrop.ag', 'mixdrop.co', 'mixdrop.sb', 'mixdrop.is',
   'mixdrop.club', 'mixdrop.to', 'mixdrop.vip',
-  'm1xdrop.bz', 'mixdrop.ch', 'mixdrop.ps'
+  'm1xdrop.bz', 'mixdrop.ch', 'mixdrop.ps',
+  'mixdrop.li', 'mixdrop.cc', 'm1xdrop.to',
+  'mixdrop.bz', 'm1xdrop.cc', 'm1xdrop.sb',
+  'mxcontent.net'
 ];
 
 function normalizeHost(h) {
@@ -302,7 +308,7 @@ function extractMixDrop(mdId, quality, cb) {
 
 function isMixDropHost(url) {
   var host = (url || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
-  return /m[a-z0-9]{0,3}x[a-z0-9]{0,3}d[a-z0-9]{0,2}r[a-z0-9]{0,2}[oa]?p{0,3}/.test(host);
+  return /m[a-z0-9]{0,3}x[a-z0-9]{0,3}d[a-z0-9]{0,2}r[a-z0-9]{0,2}[oa]?p{0,3}|mxcontent/.test(host);
 }
 
 function unwrapStayonline(stayId, cb) {
@@ -483,12 +489,62 @@ function extractFromPage(pageUrl, season, episode, cb) {
 
     var results = [];
     var pending = sections.length;
+    var mixdropFallbackTried = false;
+
+    function tryMixdropFallback() {
+      if (mixdropFallbackTried || results.length > 0) return;
+      mixdropFallbackTried = true;
+      var mdRe = /https?:\/\/(?:[a-z0-9-]+\.)*(?:miixdrop|m1xdrop|mxdrop|mixdrop)\.[a-z]+\/(?:e|f|emb|embed)\/([A-Za-z0-9]+)/gi;
+      var mdMatch;
+      var mdSeen = {};
+      var mdPending = 0;
+      while ((mdMatch = mdRe.exec(html)) !== null) {
+        var mdId = mdMatch[1];
+        if (!mdSeen[mdId]) {
+          mdSeen[mdId] = true;
+          mdPending++;
+          (function(id) {
+            var hosts = mdHostCandidates(null);
+            var tryHost = function (hi) {
+              if (hi >= hosts.length) { mdPending--; if (mdPending === 0) cb(results.length > 0 ? results : []); return; }
+              mdFetch(hosts[hi], '/e/' + id, function (err, mdHtml, fetchUrl) {
+                if (err || !mdHtml || mdHtml.length < 1000) return tryHost(hi + 1);
+                var combined = mdHtml;
+                var packerRegex = /eval\(function\(p,a,c,k,e,d\)[\s\S]*?\}\([\s\S]*?\.split\(['"]\|['"]\)[\s\S]*?\)\s*\)/g;
+                var pm;
+                while ((pm = packerRegex.exec(mdHtml)) !== null) {
+                  var unpacked = unpackPackedJs(pm[0]);
+                  if (unpacked) combined += '\n' + unpacked;
+                }
+                var su = extractMdStream(combined);
+                if (!su) return tryHost(hi + 1);
+                results.push({
+                  url: su,
+                  name: 'CB01',
+                  title: 'MixDrop',
+                  quality: '720p',
+                  behaviorHints: { notWebReady: true },
+                  headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://' + hosts[hi] + '/' }
+                });
+                mdPending--;
+                cb(results);
+              });
+            };
+            tryHost(0);
+          })(mdId);
+        }
+      }
+      if (mdPending === 0) cb(results.length > 0 ? results : []);
+    }
 
     sections.forEach(function (section) {
       processStayonlineUrl(section.url, section.quality, function (stream) {
         if (stream) results.push(stream);
         pending--;
-        if (pending === 0) cb(results.length > 0 ? results : []);
+        if (pending === 0) {
+          if (results.length > 0) return cb(results);
+          tryMixdropFallback();
+        }
       });
     });
   });

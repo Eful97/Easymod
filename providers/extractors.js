@@ -7443,12 +7443,13 @@ var require_vidxgo = __commonJS({
       "Priority": "u=0, i"
     };
     function xorDecrypt(b64, key) {
-      const decoded = Buffer.from(b64, "base64");
-      const result = Buffer.alloc(decoded.length);
-      for (let i = 0; i < decoded.length; i++) {
-        result[i] = decoded[i] ^ key.charCodeAt(i % key.length);
+      var binaryStr = typeof atob !== "undefined" ? atob(b64) : Buffer.from(b64, "base64").toString("binary");
+      var len = binaryStr.length;
+      var result = new Array(len);
+      for (var i = 0; i < len; i++) {
+        result[i] = String.fromCharCode(binaryStr.charCodeAt(i) ^ key.charCodeAt(i % key.length));
       }
-      return result.toString("utf-8");
+      return result.join("");
     }
     var XOR_PATTERN = /var\s+\w+\s*=\s*'([\w]+)'\s*,?\s*d\s*=\s*atob\s*\(\s*'([A-Za-z0-9+/=]+)'\s*\)/g;
     var CURRENT_SRC_PATTERN = /\bcurrentSrc\s*=\s*["'](https?:[^"']+?\.m3u8[^"']*)["']/;

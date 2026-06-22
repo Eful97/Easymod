@@ -8323,12 +8323,13 @@ var require_vidxgo = __commonJS({
       "Priority": "u=0, i"
     };
     function xorDecrypt(b64, key) {
-      const decoded = Buffer.from(b64, "base64");
-      const result = Buffer.alloc(decoded.length);
-      for (let i = 0; i < decoded.length; i++) {
-        result[i] = decoded[i] ^ key.charCodeAt(i % key.length);
+      var binaryStr = typeof atob !== "undefined" ? atob(b64) : Buffer.from(b64, "base64").toString("binary");
+      var len = binaryStr.length;
+      var result = new Array(len);
+      for (var i = 0; i < len; i++) {
+        result[i] = String.fromCharCode(binaryStr.charCodeAt(i) ^ key.charCodeAt(i % key.length));
       }
-      return result.toString("utf-8");
+      return result.join("");
     }
     var XOR_PATTERN = /var\s+\w+\s*=\s*'([\w]+)'\s*,?\s*d\s*=\s*atob\s*\(\s*'([A-Za-z0-9+/=]+)'\s*\)/g;
     var CURRENT_SRC_PATTERN = /\bcurrentSrc\s*=\s*["'](https?:[^"']+?\.m3u8[^"']*)["']/;
@@ -13357,6 +13358,7 @@ var require_animesaturn = __commonJS({
 var require_cb01 = __commonJS({
   "src/cb01/index.js"(exports2, module2) {
     var TMDB_API_KEY2 = "68e094699525b18a70bab2f86b1fa706";
+    var CB01_DOMAINS = ["cb01uno.sbs", "cb01uno.mom", "cb01uno.rest", "cb01uno.foo", "cb01.click"];
     function _cbTmdbMeta(id, type) {
       return new Promise(function(resolve) {
         var cleanId = String(id || "").replace(/^tmdb:/, "");
@@ -13395,12 +13397,17 @@ var require_cb01 = __commonJS({
         }
       });
     }
-    function getStreams2(id, type, season, episode) {
+    function getStreams2(id, type, season, episode, providerContext) {
       return new Promise(function(resolve, reject) {
-        var tmdbId = String(id || "").replace(/^tmdb:/, "");
-        var imdbId = typeof __imdb_id !== "undefined" ? __imdb_id : tmdbId;
+        var rawId = String(id || "").replace(/^tmdb:/, "");
+        var ctxTmdb = providerContext && /^\d+$/.test(String(providerContext.tmdbId || "")) ? String(providerContext.tmdbId) : null;
+        var ctxImdb = providerContext && /^tt\d+$/i.test(String(providerContext.imdbId || "")) ? String(providerContext.imdbId) : null;
         var mediaType = String(type || "movie").toLowerCase();
         var cinemetaType = mediaType === "tv" ? "series" : mediaType;
+        if (mediaType === "series" || mediaType === "tv") {
+          console.warn("[CB01] Series not supported on current CB01 site, returning empty.");
+          return resolve([]);
+        }
         function doSearch(title, year) {
           searchCB01(title, year, mediaType, season, episode, function(pageUrl) {
             if (!pageUrl) return resolve([]);
@@ -13409,9 +13416,10 @@ var require_cb01 = __commonJS({
             });
           });
         }
-        getCinemetaMeta(cinemetaType, imdbId, function(err, meta) {
+        var searchId = ctxImdb || rawId;
+        getCinemetaMeta(cinemetaType, searchId, function(err, meta) {
           if (meta && meta.name) return doSearch(meta.name, meta.releaseInfo || "");
-          _cbTmdbMeta(imdbId, mediaType).then(function(tmdbMeta) {
+          _cbTmdbMeta(ctxTmdb || rawId, mediaType).then(function(tmdbMeta) {
             if (tmdbMeta && tmdbMeta.name) return doSearch(tmdbMeta.name, tmdbMeta.releaseInfo || "");
             resolve([]);
           });
@@ -13460,23 +13468,19 @@ var require_cb01 = __commonJS({
       var trySearch = function(idx) {
         if (idx >= searchTitles.length) return cb(null);
         var q = searchTitles[idx];
-        var searchUrl = "https://cb01uno.sbs/" + searchPath + "?s=" + encodeURIComponent(q);
-        cb01Fetch(searchUrl, function(err, html) {
-          if (err || !html) {
-            cb01Fetch("https://cb01uno.mom/" + searchPath + "?s=" + encodeURIComponent(q), function(err2, html2) {
-              if (err2 || !html2) return trySearch(idx + 1);
-              findBestMatch(html2, q, year, function(pageUrl) {
-                if (!pageUrl) return trySearch(idx + 1);
-                cb(pageUrl);
-              });
+        var tryDomain = function(di) {
+          if (di >= CB01_DOMAINS.length) return trySearch(idx + 1);
+          var domain = CB01_DOMAINS[di];
+          var searchUrl = "https://" + domain + "/" + searchPath + "?s=" + encodeURIComponent(q);
+          cb01Fetch(searchUrl, function(err, html) {
+            if (err || !html) return tryDomain(di + 1);
+            findBestMatch(html, q, year, function(pageUrl) {
+              if (!pageUrl) return tryDomain(di + 1);
+              cb(pageUrl);
             });
-            return;
-          }
-          findBestMatch(html, q, year, function(pageUrl) {
-            if (!pageUrl) return trySearch(idx + 1);
-            cb(pageUrl);
           });
-        });
+        };
+        tryDomain(0);
       };
       trySearch(0);
     }
@@ -13534,7 +13538,14 @@ var require_cb01 = __commonJS({
       "mixdrop.vip",
       "m1xdrop.bz",
       "mixdrop.ch",
-      "mixdrop.ps"
+      "mixdrop.ps",
+      "mixdrop.li",
+      "mixdrop.cc",
+      "m1xdrop.to",
+      "mixdrop.bz",
+      "m1xdrop.cc",
+      "m1xdrop.sb",
+      "mxcontent.net"
     ];
     function normalizeHost(h) {
       if (!h) return null;
@@ -13659,7 +13670,7 @@ var require_cb01 = __commonJS({
     }
     function isMixDropHost(url) {
       var host = (url || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
-      return /m[a-z0-9]{0,3}x[a-z0-9]{0,3}d[a-z0-9]{0,2}r[a-z0-9]{0,2}[oa]?p{0,3}/.test(host);
+      return /m[a-z0-9]{0,3}x[a-z0-9]{0,3}d[a-z0-9]{0,2}r[a-z0-9]{0,2}[oa]?p{0,3}|mxcontent/.test(host);
     }
     function unwrapStayonline(stayId, cb) {
       var formBody = "id=" + encodeURIComponent(stayId) + "&ref=";
@@ -13807,11 +13818,64 @@ var require_cb01 = __commonJS({
         if (sections.length === 0) return cb([]);
         var results = [];
         var pending = sections.length;
+        var mixdropFallbackTried = false;
+        function tryMixdropFallback() {
+          if (mixdropFallbackTried || results.length > 0) return;
+          mixdropFallbackTried = true;
+          var mdRe = /https?:\/\/(?:[a-z0-9-]+\.)*(?:miixdrop|m1xdrop|mxdrop|mixdrop)\.[a-z]+\/(?:e|f|emb|embed)\/([A-Za-z0-9]+)/gi;
+          var mdMatch;
+          var mdSeen = {};
+          var mdPending = 0;
+          while ((mdMatch = mdRe.exec(html)) !== null) {
+            var mdId = mdMatch[1];
+            if (!mdSeen[mdId]) {
+              mdSeen[mdId] = true;
+              mdPending++;
+              (function(id) {
+                var hosts = mdHostCandidates(null);
+                var tryHost = function(hi) {
+                  if (hi >= hosts.length) {
+                    mdPending--;
+                    if (mdPending === 0) cb(results.length > 0 ? results : []);
+                    return;
+                  }
+                  mdFetch(hosts[hi], "/e/" + id, function(err2, mdHtml, fetchUrl) {
+                    if (err2 || !mdHtml || mdHtml.length < 1e3) return tryHost(hi + 1);
+                    var combined = mdHtml;
+                    var packerRegex = /eval\(function\(p,a,c,k,e,d\)[\s\S]*?\}\([\s\S]*?\.split\(['"]\|['"]\)[\s\S]*?\)\s*\)/g;
+                    var pm;
+                    while ((pm = packerRegex.exec(mdHtml)) !== null) {
+                      var unpacked = unpackPackedJs(pm[0]);
+                      if (unpacked) combined += "\n" + unpacked;
+                    }
+                    var su = extractMdStream(combined);
+                    if (!su) return tryHost(hi + 1);
+                    results.push({
+                      url: su,
+                      name: "CB01",
+                      title: "MixDrop",
+                      quality: "720p",
+                      behaviorHints: { notWebReady: true },
+                      headers: { "User-Agent": USER_AGENT, "Referer": "https://" + hosts[hi] + "/" }
+                    });
+                    mdPending--;
+                    cb(results);
+                  });
+                };
+                tryHost(0);
+              })(mdId);
+            }
+          }
+          if (mdPending === 0) cb(results.length > 0 ? results : []);
+        }
         sections.forEach(function(section) {
           processStayonlineUrl(section.url, section.quality, function(stream) {
             if (stream) results.push(stream);
             pending--;
-            if (pending === 0) cb(results.length > 0 ? results : []);
+            if (pending === 0) {
+              if (results.length > 0) return cb(results);
+              tryMixdropFallback();
+            }
           });
         });
       });
@@ -14636,6 +14700,34 @@ var require_eurostreaming = __commonJS({
       } catch (e) {
       }
     }
+    function _fetchDirectOrProxy(curUrl, fetchOpts) {
+      if (curUrl.includes("clicka.cc") || curUrl.includes("safego.cc")) {
+        var proxyUrl = "https://vidclick.leanhhu061208-775.workers.dev/?url=" + encodeURIComponent(curUrl);
+        var proxyOpts = {};
+        for (var k in fetchOpts) proxyOpts[k] = fetchOpts[k];
+        proxyOpts.headers = {};
+        for (var h in fetchOpts.headers) proxyOpts.headers[h] = fetchOpts.headers[h];
+        proxyOpts.headers["User-Agent"] = ES_UA;
+        proxyOpts.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8";
+        proxyOpts.headers["Accept-Language"] = "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7";
+        proxyOpts.headers["Sec-Ch-Ua"] = '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"';
+        proxyOpts.headers["Sec-Ch-Ua-Mobile"] = "?0";
+        proxyOpts.headers["Sec-Ch-Ua-Platform"] = '"Windows"';
+        proxyOpts.headers["Sec-Fetch-Dest"] = "document";
+        proxyOpts.headers["Sec-Fetch-Mode"] = "navigate";
+        proxyOpts.headers["Sec-Fetch-Site"] = "none";
+        proxyOpts.headers["Sec-Fetch-User"] = "?1";
+        proxyOpts.headers["Upgrade-Insecure-Requests"] = "1";
+        proxyOpts.headers["Connection"] = "keep-alive";
+        return fetch(proxyUrl, __spreadProps(__spreadValues({}, proxyOpts), { redirect: "manual" })).then(function(r) {
+          if (r.ok || r.status >= 300 && r.status < 400) return r;
+          return fetch(curUrl, __spreadProps(__spreadValues({}, fetchOpts), { redirect: "manual" }));
+        }).catch(function() {
+          return fetch(curUrl, __spreadProps(__spreadValues({}, fetchOpts), { redirect: "manual" }));
+        });
+      }
+      return fetch(curUrl, __spreadProps(__spreadValues({}, fetchOpts), { redirect: "manual" }));
+    }
     function _follow(url, options, maxHops, jar) {
       return new Promise(function(resolve, reject) {
         var hops = 0;
@@ -14648,28 +14740,11 @@ var require_eurostreaming = __commonJS({
             fetchOpts.headers = fetchOpts.headers || {};
             fetchOpts.headers["Cookie"] = cookieStr;
           }
-          var finalFetchUrl = curUrl;
-          if (curUrl.includes("clicka.cc") || curUrl.includes("safego.cc")) {
-            finalFetchUrl = "https://vidclick.leanhhu061208-775.workers.dev/?url=" + encodeURIComponent(curUrl);
-            fetchOpts.headers = fetchOpts.headers || {};
-            fetchOpts.headers["User-Agent"] = ES_UA;
-            fetchOpts.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8";
-            fetchOpts.headers["Accept-Language"] = "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7";
-            fetchOpts.headers["Sec-Ch-Ua"] = '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"';
-            fetchOpts.headers["Sec-Ch-Ua-Mobile"] = "?0";
-            fetchOpts.headers["Sec-Ch-Ua-Platform"] = '"Windows"';
-            fetchOpts.headers["Sec-Fetch-Dest"] = "document";
-            fetchOpts.headers["Sec-Fetch-Mode"] = "navigate";
-            fetchOpts.headers["Sec-Fetch-Site"] = "none";
-            fetchOpts.headers["Sec-Fetch-User"] = "?1";
-            fetchOpts.headers["Upgrade-Insecure-Requests"] = "1";
-            fetchOpts.headers["Connection"] = "keep-alive";
-          }
           var fetchTimeoutMs = fetchOpts.timeout || 15e3;
           var fetchTimer = setTimeout(function() {
             reject(new Error("Follow fetch timeout " + fetchTimeoutMs + "ms"));
           }, fetchTimeoutMs);
-          fetch(finalFetchUrl, __spreadProps(__spreadValues({}, fetchOpts), { redirect: "manual" })).then(function(r) {
+          _fetchDirectOrProxy(curUrl, fetchOpts).then(function(r) {
             clearTimeout(fetchTimer);
             var finalUrl = curUrl;
             _extractCookies(r, finalUrl, jar);
@@ -15784,13 +15859,15 @@ var require_eurostreaming = __commonJS({
         }
       });
     }
-    function getStreams2(id, type, season, episode) {
+    function getStreams2(id, type, season, episode, providerContext) {
       return new Promise(function(resolve, reject) {
         var rawId = String(id || "").replace(/^tmdb:/, "");
         var mediaType = String(type || "movie").toLowerCase();
         if (mediaType !== "series" && mediaType !== "tv") return resolve([]);
         var seasonNum = Number(season) || 1;
         var episodeNum = Number(episode) || 1;
+        var ctxTmdb = providerContext && /^\d+$/.test(String(providerContext.tmdbId || "")) ? String(providerContext.tmdbId) : null;
+        var ctxImdb = providerContext && /^tt\d+$/i.test(String(providerContext.imdbId || "")) ? String(providerContext.imdbId) : null;
         var sandboxImdb = typeof __imdb_id !== "undefined" && __imdb_id ? String(__imdb_id) : null;
         var isImdb = function(s) {
           return /^tt\d+$/.test(String(s || ""));
@@ -15804,6 +15881,11 @@ var require_eurostreaming = __commonJS({
           imdbCandidate = rawId;
         } else if (isNumeric(rawId)) {
           tmdbCandidate = rawId;
+        }
+        if (ctxImdb && isImdb(ctxImdb)) {
+          imdbCandidate = ctxImdb;
+        } else if (ctxTmdb && isNumeric(ctxTmdb) && !tmdbCandidate) {
+          tmdbCandidate = ctxTmdb;
         }
         if (sandboxImdb && isImdb(sandboxImdb)) {
           imdbCandidate = sandboxImdb;
@@ -15914,10 +15996,25 @@ var require_eurostreaming = __commonJS({
             }
           }
         }
-        cb("https://eurostreamings.makeup");
+        tryFallbackDomains();
       }).catch(function() {
-        cb("https://eurostreamings.makeup");
+        tryFallbackDomains();
       });
+      function tryFallbackDomains() {
+        var fallbacks = ["eurostreamings.makeup", "eurostreaming.cfd", "eurostreaming.bond", "eurostreamings.xyz"];
+        var fi = 0;
+        function nextFb() {
+          if (fi >= fallbacks.length) return cb(null);
+          var dom = fallbacks[fi++];
+          if (!dom.startsWith("http")) dom = "https://" + dom;
+          fetch(dom + "/", { timeout: 5e3 }).then(function(r) {
+            cb(r.ok ? dom : nextFb());
+          }).catch(function() {
+            nextFb();
+          });
+        }
+        nextFb();
+      }
     }
     function searchSeries(domain, title, seasonNum, cb) {
       var query = title;
@@ -16026,63 +16123,107 @@ var require_vidxgo2 = __commonJS({
     var IS_SERVER = typeof process !== "undefined" && process.versions && process.versions.node;
     var { formatStream } = require_formatter();
     if (!IS_SERVER) {
+      extractVidxGo = require_vidxgo().extractVidxGo;
+      checkQualityFromPlaylist = require_quality_helper().checkQualityFromPlaylist;
+      getQualityFromName = function(q) {
+        if (!q) return "Unknown";
+        var ql = q.toUpperCase();
+        if (ql === "ORG" || ql === "ORIGINAL") return "Original";
+        if (ql === "4K" || ql === "2160P") return "4K";
+        if (ql === "1440P" || ql === "2K") return "1440p";
+        if (ql === "1080P" || ql === "FHD") return "1080p";
+        if (ql === "720P" || ql === "HD") return "720p";
+        if (ql === "480P" || ql === "SD") return "480p";
+        if (ql === "360P") return "360p";
+        if (ql === "240P") return "240p";
+        var m = q.match(/(\d{3,4})[pP]?/);
+        if (m) {
+          var r = parseInt(m[1]);
+          if (r >= 2160) return "4K";
+          if (r >= 1440) return "1440p";
+          if (r >= 1080) return "1080p";
+          if (r >= 720) return "720p";
+          if (r >= 480) return "480p";
+          if (r >= 360) return "360p";
+          return "240p";
+        }
+        return "Unknown";
+      };
+      function resolveImdbId(id) {
+        return __async(this, null, function* () {
+          var imdbId = String(id || "").replace("tmdb:", "");
+          if (/^tt\d+$/.test(imdbId)) return imdbId;
+          if (/^\d+$/.test(imdbId)) {
+            var key = "68e094699525b18a70bab2f86b1fa706";
+            try {
+              var r = yield fetch("https://api.themoviedb.org/3/movie/" + imdbId + "?api_key=" + key);
+              if (r.ok) {
+                var d = yield r.json();
+                if (d.imdb_id) return d.imdb_id;
+              }
+              var r2 = yield fetch("https://api.themoviedb.org/3/movie/" + imdbId + "/external_ids?api_key=" + key);
+              if (r2.ok) {
+                var d2 = yield r2.json();
+                if (d2.imdb_id) return d2.imdb_id;
+              }
+              var r3 = yield fetch("https://api.themoviedb.org/3/tv/" + imdbId + "?api_key=" + key);
+              if (r3.ok) {
+                var d3 = yield r3.json();
+                if (d3.imdb_id) return d3.imdb_id;
+              }
+              var r4 = yield fetch("https://api.themoviedb.org/3/tv/" + imdbId + "/external_ids?api_key=" + key);
+              if (r4.ok) {
+                var d4 = yield r4.json();
+                if (d4.imdb_id) return d4.imdb_id;
+              }
+            } catch (e) {
+            }
+          }
+          return null;
+        });
+      }
       module2.exports = {
         getStreams: (id, type, season, episode) => __async(null, null, function* () {
-          const settings = typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS || {};
-          const proxyUrl = settings.proxyUrl;
-          const proxyPassword = settings.proxyPassword;
-          if (!proxyUrl || !proxyPassword) {
-            console.warn("[VidxGo-Client] Disabled: proxyUrl and proxyPassword must be configured.");
-            return [];
-          }
           try {
-            let imdbId = id.toString().replace("tmdb:", "");
-            const isMovie = String(type).toLowerCase() === "movie";
-            if (/^\d+$/.test(imdbId)) {
-              const endpoint = isMovie ? "movie" : "tv";
-              const TMDB_API_KEY2 = "68e094699525b18a70bab2f86b1fa706";
-              const url = `https://api.themoviedb.org/3/${endpoint}/${imdbId}?api_key=${TMDB_API_KEY2}`;
-              const response = yield fetch(url);
-              if (response.ok) {
-                const data = yield response.json();
-                if (data.imdb_id) {
-                  imdbId = data.imdb_id;
-                } else {
-                  const extUrl = `https://api.themoviedb.org/3/${endpoint}/${imdbId}/external_ids?api_key=${TMDB_API_KEY2}`;
-                  const extResponse = yield fetch(extUrl);
-                  if (extResponse.ok) {
-                    const extData = yield extResponse.json();
-                    if (extData.imdb_id) imdbId = extData.imdb_id;
-                  }
-                }
-              }
+            var settings = typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS || {};
+            var proxyUrl = settings.proxyUrl;
+            var proxyPassword = settings.proxyPassword;
+            var imdbId = yield resolveImdbId(id);
+            if (!imdbId) return [];
+            var isMovie = String(type).toLowerCase() === "movie";
+            var effectiveSeason = parseInt(String(season || ""), 10) || 1;
+            var effectiveEpisode = parseInt(String(episode || ""), 10) || 1;
+            var vidxgoUrl = isMovie ? "https://v.vidxgo.co/" + imdbId : "https://v.vidxgo.co/" + imdbId + "/" + effectiveSeason + "/" + effectiveEpisode;
+            var displayName = isMovie ? "Film" : "Serie " + effectiveSeason + "x" + effectiveEpisode;
+            if (proxyUrl && proxyPassword) {
+              var cleanProxy = proxyUrl.endsWith("/") ? proxyUrl.slice(0, -1) : proxyUrl;
+              var targetUrl2 = cleanProxy + "/extractor/video.m3u8?host=vidxgo&d=" + encodeURIComponent(vidxgoUrl) + "&redirect_stream=true&api_password=" + proxyPassword;
+              return [formatStream({
+                url: targetUrl2,
+                name: "VidxGo",
+                title: displayName,
+                quality: "1080p",
+                language: "Italian",
+                size: "proxied",
+                type: "direct",
+                headers: null,
+                behaviorHints: { proxyHeaders: null, headers: null }
+              }, "VidxGo")].filter(Boolean);
             }
-            if (!imdbId.startsWith("tt")) {
-              console.warn("[VidxGo-Client] Could not resolve IMDB ID for ID:", id);
-              return [];
-            }
-            const effectiveSeason = parseInt(String(season || ""), 10) || 1;
-            const effectiveEpisode = parseInt(String(episode || ""), 10) || 1;
-            const vidxgoUrl = isMovie ? `https://v.vidxgo.co/${imdbId}` : `https://v.vidxgo.co/${imdbId}/${effectiveSeason}/${effectiveEpisode}`;
-            const cleanProxyUrl = proxyUrl.endsWith("/") ? proxyUrl.slice(0, -1) : proxyUrl;
-            const targetUrl2 = `${cleanProxyUrl}/extractor/video.m3u8?host=vidxgo&d=${vidxgoUrl}&redirect_stream=true&api_password=${proxyPassword}`;
-            const contentTitle = isMovie ? "Film" : "Serie";
-            const displayName = isMovie ? contentTitle : `${contentTitle} ${effectiveSeason}x${effectiveEpisode}`;
-            const result = {
-              url: targetUrl2,
+            var extracted = yield extractVidxGo(vidxgoUrl);
+            if (!extracted || !extracted.url) return [];
+            var quality = "HD";
+            var detected = yield checkQualityFromPlaylist(extracted.url, extracted.headers);
+            if (detected) quality = detected;
+            return [formatStream({
+              url: extracted.url,
+              headers: extracted.headers,
               name: "VidxGo",
               title: displayName,
-              quality: "1080p",
-              language: "Italian",
-              size: "proxied",
+              quality: getQualityFromName(quality),
               type: "direct",
-              headers: null,
-              behaviorHints: {
-                proxyHeaders: null,
-                headers: null
-              }
-            };
-            return [formatStream(result, "VidxGo")].filter((s) => s !== null);
+              language: "Italian"
+            }, "VidxGo")].filter(Boolean);
           } catch (e) {
             console.error("[VidxGo-Client] Error:", e);
             return [];
@@ -16270,7 +16411,7 @@ var require_vidxgo2 = __commonJS({
             const vidxgoUrl = isMovie ? `https://v.vidxgo.co/${imdbId}` : `https://v.vidxgo.co/${imdbId}/${effectiveSeason}/${effectiveEpisode}`;
             const shouldUseEasyProxy = Boolean(providerContext && providerContext.proxyUrl);
             let vidxgoStream = null;
-            const extracted = yield extractVidxGo(vidxgoUrl, "https://altadefinizione.you/");
+            const extracted = yield extractVidxGo2(vidxgoUrl, "https://altadefinizione.you/");
             if (!extracted) {
               return [];
             }
@@ -16287,7 +16428,7 @@ var require_vidxgo2 = __commonJS({
               let quality = "HD";
               let hasItalian = false;
               if (!shouldUseEasyProxy) {
-                const detectedQuality = yield checkQualityFromPlaylist(vidxgoStream.url, vidxgoStream.headers);
+                const detectedQuality = yield checkQualityFromPlaylist2(vidxgoStream.url, vidxgoStream.headers);
                 if (detectedQuality) quality = detectedQuality;
                 hasItalian = yield checkItalianAudioInPlaylist(vidxgoStream.url, vidxgoStream.headers);
               }
@@ -16341,17 +16482,19 @@ var require_vidxgo2 = __commonJS({
       };
       const TMDB_API_KEY2 = "68e094699525b18a70bab2f86b1fa706";
       const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
-      const { extractVidxGo } = require_vidxgo();
+      const { extractVidxGo: extractVidxGo2 } = require_vidxgo();
       require_fetch_helper();
-      const { checkQualityFromPlaylist, checkItalianAudioInPlaylist } = require_quality_helper();
+      const { checkQualityFromPlaylist: checkQualityFromPlaylist2, checkItalianAudioInPlaylist } = require_quality_helper();
       const STEP_BENCH_ENABLED = String(process.env.PROVIDER_STEP_BENCH || "").trim().toLowerCase() === "1";
       module2.exports = { getStreams: getStreams3 };
     }
+    var extractVidxGo;
+    var checkQualityFromPlaylist;
+    var getQualityFromName;
     var __async2;
     var getMappingApiUrl;
     var normalizeConfigBoolean;
     var getMappingLanguage;
-    var getQualityFromName;
     var getImdbId;
     var getTitleFromIds;
     var getIdsFromMapping;
