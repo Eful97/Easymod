@@ -14561,6 +14561,7 @@ var require_cinemacity = __commonJS({
 var require_eurostreaming = __commonJS({
   "src/eurostreaming/index.js"(exports2, module2) {
     var ES_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+    var formatStream = require_formatter().formatStream;
     if (typeof URL === "undefined") {
       URL = function(uri, base) {
         var resolved = uri;
@@ -14632,6 +14633,53 @@ var require_eurostreaming = __commonJS({
       } catch (e) {
         return rawUrl;
       }
+    }
+    function _streamFromProxyUrl(rawUrl) {
+      var url = String(rawUrl || "");
+      if (url.indexOf("/proxy/") !== 0) return { url, headers: null };
+      var body = url.slice("/proxy/".length);
+      var pathIndex = body.indexOf("/");
+      if (pathIndex < 0) return { url, headers: null };
+      var query = body.slice(0, pathIndex);
+      var path = body.slice(pathIndex);
+      var params = new URLSearchParams(query);
+      var origin = params.get("d");
+      if (!origin) return { url, headers: null };
+      var headers = {};
+      var headerRows = params.getAll("h");
+      for (var i = 0; i < headerRows.length; i++) {
+        var row = headerRows[i];
+        var splitAt = row.indexOf(":");
+        if (splitAt <= 0) continue;
+        var key = row.slice(0, splitAt);
+        var value = row.slice(splitAt + 1);
+        headers[key] = value;
+      }
+      return {
+        url: origin.replace(/\/+$/, "") + path,
+        headers
+      };
+    }
+    function _formatEurostreamingStreams(streams, season, episode) {
+      if (!Array.isArray(streams)) return [];
+      var effectiveSeason = Number(season) || 1;
+      var effectiveEpisode = Number(episode) || 1;
+      return streams.map(function(stream) {
+        if (!stream || !stream.url) return null;
+        var parsed = _streamFromProxyUrl(stream.url);
+        var hostLabel = stream.title || "Stream";
+        return formatStream({
+          url: parsed.url,
+          headers: parsed.headers || stream.headers || null,
+          name: "Eurostreaming - " + hostLabel,
+          title: "Serie " + effectiveSeason + "x" + effectiveEpisode,
+          quality: stream.quality || "720p",
+          type: /\.m3u8(?:[?#].*)?$/i.test(String(parsed.url || "")) ? "hls" : "direct",
+          language: "Italian",
+          behaviorHints: stream.behaviorHints || { notWebReady: true },
+          provider: "eurostreaming"
+        }, "Eurostreaming");
+      }).filter(Boolean);
     }
     function _sleep(ms) {
       return new Promise(function(r) {
@@ -15901,7 +15949,7 @@ var require_eurostreaming = __commonJS({
             searchSeries(domain, title, seasonNum, function(pageUrl) {
               if (!pageUrl) return resolve([]);
               extractLinksFromPage(domain, pageUrl, seasonNum, episodeNum, function(streams) {
-                resolve(streams || []);
+                resolve(_formatEurostreamingStreams(streams || [], seasonNum, episodeNum));
               });
             });
           });
@@ -15916,7 +15964,7 @@ var require_eurostreaming = __commonJS({
               searchSeries(domain, list[idx++], seasonNum, function(pageUrl) {
                 if (!pageUrl) return next();
                 extractLinksFromPage(domain, pageUrl, seasonNum, episodeNum, function(streams) {
-                  if (streams && streams.length > 0) return resolve(streams);
+                  if (streams && streams.length > 0) return resolve(_formatEurostreamingStreams(streams, seasonNum, episodeNum));
                   next();
                 });
               });

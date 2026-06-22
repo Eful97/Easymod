@@ -1,6 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __propIsEnum = Object.prototype.propertyIsEnumerable;
@@ -17,9 +18,135 @@ var __spreadValues = (a, b) => {
   return a;
 };
 var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/formatter.js
+var require_formatter = __commonJS({
+  "src/formatter.js"(exports2, module2) {
+    function normalizePlaybackHeaders(headers) {
+      if (!headers || typeof headers !== "object") return headers;
+      const normalized = {};
+      for (const [key, value] of Object.entries(headers)) {
+        if (value == null) continue;
+        const lowerKey = String(key).toLowerCase();
+        if (lowerKey === "user-agent") normalized["User-Agent"] = value;
+        else if (lowerKey === "referer" || lowerKey === "referrer") normalized["Referer"] = value;
+        else if (lowerKey === "origin") normalized["Origin"] = value;
+        else if (lowerKey === "accept") normalized["Accept"] = value;
+        else if (lowerKey === "accept-language") normalized["Accept-Language"] = value;
+        else normalized[key] = value;
+      }
+      return normalized;
+    }
+    function shouldForceNotWebReadyForPlugin(stream, providerName, headers, behaviorHints) {
+      const text = [
+        stream == null ? void 0 : stream.url,
+        stream == null ? void 0 : stream.name,
+        stream == null ? void 0 : stream.title,
+        stream == null ? void 0 : stream.server,
+        providerName
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (text.includes("loadm") || text.includes("loadm.cam") || text.includes("mixdrop") || text.includes("mxcontent")) {
+        return true;
+      }
+      return false;
+    }
+    function normalizeProviderId(providerName) {
+      const normalized = String(providerName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+      return normalized || void 0;
+    }
+    function formatStream2(stream, providerName) {
+      let quality = stream.quality || "";
+      if (quality === "2160p") quality = "\u{1F525}4K UHD";
+      else if (quality === "1440p") quality = "\u2728 QHD";
+      else if (quality === "1080p") quality = "\u{1F680} FHD";
+      else if (quality === "720p") quality = "\u{1F4BF} HD";
+      else if (quality === "576p" || quality === "480p" || quality === "360p" || quality === "240p") quality = "\u{1F4A9} Low Quality";
+      else if (!quality || ["auto", "unknown", "unknow"].includes(String(quality).toLowerCase())) quality = "\u{1F4BF} HD";
+      let title = `\u{1F4C1} ${stream.title || "Stream"}`;
+      let language = stream.language;
+      if (language === "Italian") {
+        language = "\u{1F1EE}\u{1F1F9}";
+      } else if (stream.name && (stream.name.includes("SUB ITA") || stream.name.includes("SUB"))) {
+        language = "\u{1F1EF}\u{1F1F5} \u{1F1EE}\u{1F1F9}";
+      } else if (stream.title && (stream.title.includes("SUB ITA") || stream.title.includes("SUB"))) {
+        language = "\u{1F1EF}\u{1F1F5} \u{1F1EE}\u{1F1F9}";
+      } else if (language === void 0 || language === null) {
+        language = "";
+      }
+      let details = [];
+      if (stream.size) details.push(`\u{1F4E6} ${stream.size}`);
+      const desc = details.join(" | ");
+      let pName = stream.name || stream.server || providerName;
+      if (pName) {
+        pName = pName.replace(/\s*\[?\(?\s*SUB\s*ITA\s*\)?\]?/i, "").replace(/\s*\[?\(?\s*ITA\s*\)?\]?/i, "").replace(/\s*\[?\(?\s*SUB\s*\)?\]?/i, "").replace(/\(\s*\)/g, "").replace(/\[\s*\]/g, "").trim();
+      }
+      if (pName === providerName) {
+        pName = pName.charAt(0).toUpperCase() + pName.slice(1);
+      }
+      if (pName) {
+        pName = `\u{1F4E1} ${pName}`;
+      }
+      const behaviorHints = stream.behaviorHints && typeof stream.behaviorHints === "object" ? __spreadValues({}, stream.behaviorHints) : {};
+      let finalHeaders = stream.headers;
+      if (behaviorHints.proxyHeaders && behaviorHints.proxyHeaders.request) {
+        finalHeaders = behaviorHints.proxyHeaders.request;
+      } else if (behaviorHints.headers) {
+        finalHeaders = behaviorHints.headers;
+      }
+      finalHeaders = normalizePlaybackHeaders(finalHeaders);
+      const isStreamingCommunityProvider = String(providerName || "").toLowerCase() === "streamingcommunity" || String((stream == null ? void 0 : stream.name) || "").toLowerCase().includes("streamingcommunity");
+      if (isStreamingCommunityProvider && !finalHeaders) {
+        delete behaviorHints.proxyHeaders;
+        delete behaviorHints.headers;
+        delete behaviorHints.notWebReady;
+      }
+      if (finalHeaders) {
+        behaviorHints.proxyHeaders = behaviorHints.proxyHeaders || {};
+        behaviorHints.proxyHeaders.request = finalHeaders;
+        behaviorHints.headers = finalHeaders;
+      }
+      const providerExplicitNotWebReady = stream.behaviorHints && "notWebReady" in stream.behaviorHints;
+      const shouldForceNotWebReady = shouldForceNotWebReadyForPlugin(stream, providerName, finalHeaders, behaviorHints);
+      if (!isStreamingCommunityProvider && shouldForceNotWebReady) {
+        behaviorHints.notWebReady = true;
+      } else if (!providerExplicitNotWebReady) {
+        delete behaviorHints.notWebReady;
+      }
+      const finalName = pName;
+      let finalTitle = `\u{1F4C1} ${stream.title || "Stream"}`;
+      if (desc) finalTitle += ` | ${desc}`;
+      if (language) finalTitle += ` | ${language}`;
+      const playbackReferer = stream.referer || (finalHeaders == null ? void 0 : finalHeaders.Referer) || (finalHeaders == null ? void 0 : finalHeaders.referer);
+      const playbackUserAgent = stream.userAgent || (finalHeaders == null ? void 0 : finalHeaders["User-Agent"]) || (finalHeaders == null ? void 0 : finalHeaders["user-agent"]);
+      return __spreadProps(__spreadValues({}, stream), {
+        // Keep original properties
+        name: finalName,
+        title: finalTitle,
+        providerName: pName,
+        qualityTag: quality,
+        description: desc,
+        originalTitle: stream.title || "Stream",
+        language,
+        // Mark as formatted
+        _nuvio_formatted: true,
+        behaviorHints,
+        provider: stream.provider || normalizeProviderId(providerName),
+        referer: playbackReferer,
+        userAgent: playbackUserAgent,
+        // Explicitly ensure root headers are preserved for Nuvio
+        headers: finalHeaders
+      });
+    }
+    module2.exports = { formatStream: formatStream2 };
+  }
+});
 
 // src/eurostreaming/index.js
 var ES_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+var formatStream = require_formatter().formatStream;
 if (typeof URL === "undefined") {
   URL = function(uri, base) {
     var resolved = uri;
@@ -91,6 +218,53 @@ function _buildProxyUrl(rawUrl, referer, ua, origin) {
   } catch (e) {
     return rawUrl;
   }
+}
+function _streamFromProxyUrl(rawUrl) {
+  var url = String(rawUrl || "");
+  if (url.indexOf("/proxy/") !== 0) return { url, headers: null };
+  var body = url.slice("/proxy/".length);
+  var pathIndex = body.indexOf("/");
+  if (pathIndex < 0) return { url, headers: null };
+  var query = body.slice(0, pathIndex);
+  var path = body.slice(pathIndex);
+  var params = new URLSearchParams(query);
+  var origin = params.get("d");
+  if (!origin) return { url, headers: null };
+  var headers = {};
+  var headerRows = params.getAll("h");
+  for (var i = 0; i < headerRows.length; i++) {
+    var row = headerRows[i];
+    var splitAt = row.indexOf(":");
+    if (splitAt <= 0) continue;
+    var key = row.slice(0, splitAt);
+    var value = row.slice(splitAt + 1);
+    headers[key] = value;
+  }
+  return {
+    url: origin.replace(/\/+$/, "") + path,
+    headers
+  };
+}
+function _formatEurostreamingStreams(streams, season, episode) {
+  if (!Array.isArray(streams)) return [];
+  var effectiveSeason = Number(season) || 1;
+  var effectiveEpisode = Number(episode) || 1;
+  return streams.map(function(stream) {
+    if (!stream || !stream.url) return null;
+    var parsed = _streamFromProxyUrl(stream.url);
+    var hostLabel = stream.title || "Stream";
+    return formatStream({
+      url: parsed.url,
+      headers: parsed.headers || stream.headers || null,
+      name: "Eurostreaming - " + hostLabel,
+      title: "Serie " + effectiveSeason + "x" + effectiveEpisode,
+      quality: stream.quality || "720p",
+      type: /\.m3u8(?:[?#].*)?$/i.test(String(parsed.url || "")) ? "hls" : "direct",
+      language: "Italian",
+      behaviorHints: stream.behaviorHints || { notWebReady: true },
+      provider: "eurostreaming"
+    }, "Eurostreaming");
+  }).filter(Boolean);
 }
 function _sleep(ms) {
   return new Promise(function(r) {
@@ -1360,7 +1534,7 @@ function getStreams(id, type, season, episode, providerContext) {
         searchSeries(domain, title, seasonNum, function(pageUrl) {
           if (!pageUrl) return resolve([]);
           extractLinksFromPage(domain, pageUrl, seasonNum, episodeNum, function(streams) {
-            resolve(streams || []);
+            resolve(_formatEurostreamingStreams(streams || [], seasonNum, episodeNum));
           });
         });
       });
@@ -1375,7 +1549,7 @@ function getStreams(id, type, season, episode, providerContext) {
           searchSeries(domain, list[idx++], seasonNum, function(pageUrl) {
             if (!pageUrl) return next();
             extractLinksFromPage(domain, pageUrl, seasonNum, episodeNum, function(streams) {
-              if (streams && streams.length > 0) return resolve(streams);
+              if (streams && streams.length > 0) return resolve(_formatEurostreamingStreams(streams, seasonNum, episodeNum));
               next();
             });
           });
