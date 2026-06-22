@@ -859,7 +859,12 @@ var require_cf_bypass = __commonJS({
     }
     function execPythonBypass(url, provider, options = {}) {
       return new Promise((resolve, reject) => {
-        const scriptPath = path.join(__dirname, "src", "utils", "scrapling_bypass.py");
+        const scriptCandidates = [
+          path.join(process.cwd(), "src", "utils", "scrapling_bypass.py"),
+          path.join(__dirname, "src", "utils", "scrapling_bypass.py"),
+          path.join(__dirname, "..", "src", "utils", "scrapling_bypass.py")
+        ];
+        const scriptPath = scriptCandidates.find((candidate) => fs.existsSync(candidate)) || scriptCandidates[0];
         const args = [
           scriptPath,
           url,
