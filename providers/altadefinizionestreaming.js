@@ -212,6 +212,23 @@ var require_mixdrop = __commonJS({
 // src/formatter.js
 var require_formatter = __commonJS({
   "src/formatter.js"(exports2, module2) {
+    function isHlsUrl(rawUrl) {
+      const url = String(rawUrl || "").trim();
+      if (!url) return false;
+      try {
+        const parsed = new URL(url);
+        const pathname = String(parsed.pathname || "").toLowerCase();
+        return pathname.endsWith(".m3u8") || pathname.includes("/playlist/");
+      } catch (e) {
+        return /\.m3u8(?:[?#].*)?$/i.test(url) || /\/playlist\/[^?#\s]+/i.test(url);
+      }
+    }
+    function normalizeStreamType(stream) {
+      const type = String((stream == null ? void 0 : stream.type) || "").trim().toLowerCase();
+      if (type === "hls" || type === "m3u8") return "hls";
+      if (isHlsUrl(stream == null ? void 0 : stream.url)) return "hls";
+      return stream == null ? void 0 : stream.type;
+    }
     function normalizePlaybackHeaders(headers) {
       if (!headers || typeof headers !== "object") return headers;
       const normalized = {};
@@ -308,8 +325,10 @@ var require_formatter = __commonJS({
       if (language) finalTitle += ` | ${language}`;
       const playbackReferer = stream.referer || (finalHeaders == null ? void 0 : finalHeaders.Referer) || (finalHeaders == null ? void 0 : finalHeaders.referer);
       const playbackUserAgent = stream.userAgent || (finalHeaders == null ? void 0 : finalHeaders["User-Agent"]) || (finalHeaders == null ? void 0 : finalHeaders["user-agent"]);
+      const normalizedType = normalizeStreamType(stream);
       return __spreadProps(__spreadValues({}, stream), {
         // Keep original properties
+        type: normalizedType,
         name: finalName,
         title: finalTitle,
         providerName: pName,
